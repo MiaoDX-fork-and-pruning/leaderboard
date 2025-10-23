@@ -142,14 +142,24 @@ class RouteScenario(BasicScenario):
         return new_scenarios_config
 
     def _spawn_ego_vehicle(self):
-        """Spawn the ego vehicle at the first waypoint of the route"""
+    # """Spawn the ego vehicle at the second waypoint of the route"""
+        # if len(self.route) > 1:
+        #     elevate_transform = self.route[2][0]  # 选择第二个路点
+        # else:
+        #     print("Route has less than 2 waypoints, using the first one.")
+        #     elevate_transform = self.route[1][0]
         elevate_transform = self.route[0][0]
         elevate_transform.location.z += 0.5
+        # elevate_transform = carla.Transform(
+        #         carla.Location(x=-1282.9, y=4059.1, z=358), 
+        #         carla.Rotation(yaw=180))
+        print(f"Spawning ego vehicle at location: {elevate_transform.location}")
 
         ego_vehicle = CarlaDataProvider.request_new_actor('vehicle.lincoln.mkz_2020',
-                                                          elevate_transform,
-                                                          rolename='hero')
+                                                        elevate_transform,
+                                                        rolename='hero')
         if not ego_vehicle:
+            print("Failed to spawn ego vehicle!")
             return
 
         spectator = self.world.get_spectator()
@@ -158,7 +168,9 @@ class RouteScenario(BasicScenario):
 
         self.world.tick()
 
+        print(f"Ego vehicle spawned successfully at location: {ego_vehicle.get_location()}")
         return ego_vehicle
+
 
     def _get_parking_slots(self, max_distance=100, route_step=10):
         """Spawn parked vehicles."""
@@ -203,6 +215,7 @@ class RouteScenario(BasicScenario):
         self.available_parking_locations = available_parking_locations
 
     def spawn_parked_vehicles(self, ego_vehicle, max_scenario_distance=10):
+        # return
         """Spawn parked vehicles."""
         def is_close(slot_location, ego_location):
             return slot_location.distance(ego_location) < self.PARKED_VEHICLES_INIT_THRESHOLD

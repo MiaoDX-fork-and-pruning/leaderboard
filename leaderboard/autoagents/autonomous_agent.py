@@ -81,6 +81,12 @@ class AutonomousAgent(object):
         Execute one step of navigation.
         :return: control
         """
+        # if hasattr(self, '_world') and hasattr(self, '_ego_vehicle'):
+        #     # 获取车辆的变换信息
+        #     transform = self._ego_vehicle.get_transform()
+        #     # 获取车辆的偏航角（朝向）
+        #     yaw = transform.rotation.yaw
+        #     print(f"[车辆朝向] Yaw: {yaw:.2f}°")
         control = carla.VehicleControl()
         control.steer = 0.0
         control.throttle = 0.0
@@ -111,8 +117,8 @@ class AutonomousAgent(object):
         wallclock_diff = (wallclock - self.wallclock_t0).total_seconds()
         sim_ratio = 0 if wallclock_diff == 0 else timestamp/wallclock_diff
 
-        print('=== [Agent] -- Wallclock = {} -- System time = {} -- Game time = {} -- Ratio = {}x'.format(
-            str(wallclock)[:-3], format(wallclock_diff, '.3f'), format(timestamp, '.3f'), format(sim_ratio, '.3f')))
+        # print('=== [Agent] -- Wallclock = {} -- System time = {} -- Game time = {} -- Ratio = {}x'.format(
+        #     str(wallclock)[:-3], format(wallclock_diff, '.3f'), format(timestamp, '.3f'), format(sim_ratio, '.3f')))
 
         control = self.run_step(input_data, timestamp)
         control.manual_gear_shift = False

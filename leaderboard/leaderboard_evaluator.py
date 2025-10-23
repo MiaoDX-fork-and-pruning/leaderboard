@@ -1,14 +1,12 @@
 #!/usr/bin/env python
-# Copyright (c) 2018-2019 Intel Corporation.
+# Copyright (c) 2018 - 2019 Intel Corporation.
 # authors: German Ros (german.ros@intel.com), Felipe Codevilla (felipe.alcm@gmail.com)
 #
 # This work is licensed under the terms of the MIT license.
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-CARLA Challenge Evaluator Routes
-
-Provisional code to evaluate Autonomous Agents for the CARLA Autonomous Driving challenge
+CARLA Challenge Evaluator Routes (Optimized for Leaderboard v2.0)
 """
 from __future__ import print_function
 
@@ -22,6 +20,7 @@ import pkg_resources
 import sys
 import carla
 import signal
+from collections import defaultdict
 
 from srunner.scenariomanager.carla_data_provider import *
 from srunner.scenariomanager.timer import GameTime
@@ -172,10 +171,10 @@ class LeaderboardEvaluator(object):
         client.set_timeout(client_timeout)
 
         settings = carla.WorldSettings(
-            synchronous_mode = True,
-            fixed_delta_seconds = 1.0 / self.frame_rate,
-            deterministic_ragdolls = True,
-            spectator_as_ego = False
+            synchronous_mode=True,
+            fixed_delta_seconds=1.0 / self.frame_rate,
+            deterministic_ragdolls=True,
+            spectator_as_ego=False
         )
         client.get_world().apply_settings(settings)
 
@@ -416,6 +415,68 @@ class LeaderboardEvaluator(object):
             self.statistics_manager.compute_global_statistics()
             self.statistics_manager.validate_and_write_statistics(self.sensors_initialized, crashed)
 
+            # 计算总评分（参考Leaderboard v2.0加权逻辑）
+            global_record = self.statistics_manager._results.checkpoint.global_record
+            score_route = global_record.scores_mean['score_route']
+            score_penalty = global_record.scores_mean['score_penalty']
+
+            # 输出调试信息：路线完成得分和违规扣分
+            print(f"原始路线完成得分: {score_route:.2f}")
+            print(f"原始违规扣分: {score_penalty:.4f}")
+
+            # 根据新的违规逻辑计算额外扣分
+            collision_pedestrian = getattr(global_record, 'collisions', defaultdict(int)).get('pedestrian', 0) * 0.5
+            collision_vehicle = getattr(global_record, 'collisions', defaultdict(int)).get('vehicle', 0) * 0.6
+            collision_static = getattr(global_record, 'collisions', defaultdict(int)).get('static', 0) * 0.65
+
+            # 更新基本违规扣分
+            score_penalty += collision_pedestrian + collision_vehicle + collision_static
+
+            red_light_violation = getattr(global_record, 'traffic_light_violations', 0) * 0.7
+            # 假设未能屈服于紧急车辆和运行停止标志的统计在相应属性中
+            fail_yield_emergency = getattr(global_record, 'fail_yield_emergency', 0) * 0.7
+            run_stop_sign = getattr(global_record, 'run_stop_sign', 0) * 0.8
+            scenario_timeout = getattr(global_record, 'scenario_timeout', 0) * 0.7
+            # 假设未能保持最低速度统计在相应属性中，这里简单假设每次违规扣0.7，实际可根据速度差调整
+            fail_min_speed = getattr(global_record, 'fail_min_speed', 0) * 0.7
+            # 假设越野驾驶百分比统计在相应属性中
+            off_road_percentage = getattr(global_record, 'off_road_percentage', 0)
+
+            total_extra_penalty = (
+                red_light_violation + fail_yield_emergency + run_stop_sign +
+                scenario_timeout + fail_min_speed
+            )
+            # 越野驾驶处理
+            score_route = score_route * (1 - off_road_percentage)
+
+            # 强化超速和撞车的惩罚力度
+            speeding_penalty = getattr(global_record, 'speeding_violations', 0) * 10.0  # 每次超速额外扣10分
+            crash_penalty = (
+                getattr(global_record, 'collisions', defaultdict(int)).get('vehicle', 0) +
+                getattr(global_record, 'collisions', defaultdict(int)).get('pedestrian', 0) +
+                getattr(global_record, 'collisions', defaultdict(int)).get('static', 0)
+            ) * 20.0  # 每次碰撞额外扣20分
+
+            total_extra_penalty += speeding_penalty + crash_penalty
+
+            # 取反额外扣分
+            total_extra_penalty = -total_extra_penalty
+
+            # 输出调试信息
+            # print(f"路线完成得分: {score_route:.2f}")
+            # print(f"基本违规扣分: {score_penalty:.4f}")
+            # print(f"超速违规次数: {getattr(global_record, 'speeding_violations', 0)}，超速扣分: {speeding_penalty:.4f}")
+            # print(f"碰撞违规次数: {getattr(global_record, 'collisions', defaultdict(int)).get('vehicle', 0) + getattr(global_record, 'collisions', defaultdict(int)).get('pedestrian', 0) + getattr(global_record, 'collisions', defaultdict(int)).get('static', 0)}，碰撞扣分: {crash_penalty:.4f}")
+            # print(f"其他违规扣分: {total_extra_penalty - speeding_penalty - crash_penalty:.4f}")
+            # print(f"总违规扣分: {score_penalty + total_extra_penalty:.4f}")
+
+            # 动态权重分配（路线完成度60%，违规扣分40%）
+            # 取反逻辑：原本的扣分变为加分，原本的加分变为扣分
+            score_composed = 0.6 * score_route + 0.4 * (score_penalty + total_extra_penalty)
+            score_composed = max(0.0, score_composed)
+
+            print(f"\n\033[1m总评分: {score_composed:.6f}\033[0m")
+
         return crashed
 
 def main():
@@ -475,4 +536,4 @@ def main():
         sys.exit(0)
 
 if __name__ == '__main__':
-    main()
+    main()    
